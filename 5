@@ -1,0 +1,44 @@
+# Experiment = 05
+! pip install -q crewai
+from crewai import Agent,Task,LLM,Crew
+from getpass import getpass
+
+key=getpass("enter your api key").strip()
+
+llm=LLM(
+    model="gemini/gemini-3.7-flash",
+    api_key=key
+)
+
+source=input("enter your Scource place : ")
+destination=input("enter your Destination place : ")
+people=input("enter total no of people")
+Days=input("enter how many days you will travel : ")
+budget=input("enter your total budget ($) : ")
+intrest=input("enter your Intrest :")
+
+info=f"""
+From : {source},
+To : {destination},
+people : {people},
+Days : {Days},
+Budget : {budget},
+Intrest :{intrest}
+
+"""
+
+Transport=Agent(role="Travel Transport Expert",goal="suggest a affordable transport",backstory="Travel Trasport Expert",llm=llm)
+Hotel=Agent(role="Hotel Expert",goal="suggest a affordable Hotel",backstory="Hotel Expert",llm=llm)
+activity=Agent(role="activity Expert",goal="suggest a affordable activity",backstory="local guide Expert",llm=llm)
+planner=Agent(role="Travel Planner Expert",goal="create a budget friendly travel plane",backstory="Travel Planner Expert",llm=llm)
+
+t1=Task(description=f"suggest a affordable transport for {info}",agent=Transport,expected_output="Transport and cost")
+t2=Task(description=f"suggest a affordable hotel for {info}",agent=Hotel,expected_output="Hotel and cost")
+t3=Task(description=f"suggest a affordable activity for {info}",agent=activity,expected_output="activity and cost")
+t4=Task(description=f"create daily wise travel plane for {info} within the budget",agent=planner,expected_output="plan and cost",context=[t1,t2,t3])
+
+crew=Crew(agents=[Transport,Hotel,activity,planner],tasks=[t1,t2,t3,t4])
+result=await crew.kickoff_async()
+print(result)
+
+
