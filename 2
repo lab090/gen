@@ -1,0 +1,19 @@
+
+
+! pip install -q transformers pandas
+from transformers import pipeline
+import pandas as pd
+
+df=pd.read_csv("IMDB Dataset.csv",engine="python",on_bad_lines="skip")
+print("Length of datasets : ",len(df))
+
+analyzer=pipeline("sentiment-analysis",
+                  model="distilbert-base-uncased-finetuned-sst-2-english")
+for i in range(5):
+  review=df.iloc[i]["review"]
+  result=analyzer(review[:512])[0]
+  print("Reviws : ", i+1)
+  print("Sentiment prediction : ",df.iloc[i]['sentiment'].upper())
+  print("Predicted sentiment : ",result['label'])
+  print("Confidence Score : ",result['score'])
+  print("Reviw : ",review[:100])
