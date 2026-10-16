@@ -1,0 +1,89 @@
+
+
+!pip -q install biopython scikit-learn transformers sentencepiece
+
+import torch
+from Bio import Entrez
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+
+Entrez.email = "your_email@gmail.com"
+
+name = "google/flan-t5-small"
+tokenizer = AutoTokenizer.from_pretrained(name)
+model = AutoModelForSeq2SeqLM.from_pretrained(name)
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+def get_articles(query, n=5):
+    with Entrez.esearch(
+        db="pubmed",
+        term=query,
+        retmax=n
+    ) as handle:
+        ids = Entrez.read(handle)["IdList"]
+
+    if not ids:
+        return []
+
+    with Entrez.efetch(
+        db="pubmed",
+        id=ids,
+        rettype="abstract",
+        retmode="text"
+    ) as handle:
+        text = handle.read()
+
+    articles = [
+        a.strip()
+        for a in text.split("\n\n")
+        if len(a.strip()) > 100
+    ]
+
+    return articles
+
+
+def retrieve(question, docs, k=3):
+    if not docs:
+        return []
+
+    vectorizer = TfidfVectorizer(stop_words="english")
+    vectors = vectorizer.fit_transform(docs + [question])
+
+    scores = cosine_similarity(
+        vectors[-1],
+        vectors[:-1]
+    )[0]
+
+    top_k = min(k, len(docs))
+
+    indices = scores.argsort()[-top_k:][::-1]
+
+    return [docs[i] for i in indices]
+
+
+def answer(question, docs):
+    prompt = f"""Context: {' '.join(docs)}
+    Question: {question}
+    Answer using only the context."""
+
+    inputs = tokenizer(
+        prompt, return_tensors="pt",
+        truncation=True, max_length=512
+    ).to(device)
+
+    with torch.no_grad():
+        output = model.generate(**inputs, max_new_tokens=100)
+
+    return tokenizer.decode(output[0], skip_special_tokens=True)
+
+q = input("Enter biomedical question: ")
+docs = get_articles(q)
+
+if docs:
+    relevant = retrieve(q, docs)
+    print("\nRelevant abstracts:")
+    print(*relevant, sep="\n\n")
+    print("\nFinal Answer:", answer(q, relevant))
+else:
+    print("No PubMed documents found.")
