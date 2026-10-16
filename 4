@@ -1,0 +1,77 @@
+
+! pip install faiss-cpu
+import faiss
+from transformers import pipeline
+from sentence_transformers import SentenceTransformer
+
+documents = [
+    "Case 1: A contract dispute arose between two parties. "
+    "The court held that the agreement was valid because both parties "
+    "had clearly accepted its terms.",
+
+    "Case 2: A person was accused of negligence after causing an "
+    "accident. "
+    "The court explained that negligence requires a duty of care, "
+    "a breach of that duty, and resulting harm.",
+
+    "Case 3: A tenant challenged an eviction notice. "
+    "The court held that the landlord must follow the applicable "
+    "legal procedure before evicting the tenant.",
+
+    "Case 4: A company used another company's trademark without "
+    "permission. "
+    "The court held that unauthorized use of a protected trademark "
+    "could amount to infringement."
+]
+
+embedding_model = SentenceTransformer(
+    "all-MiniLM-L6-v2"
+)
+document_embeddings=embedding_model.encode(documents)
+dimensions=document_embeddings.shape[1]
+
+index=faiss.IndexFlatL2(dimensions)
+index.add(document_embeddings)
+
+generator=pipeline("text-generation",model="google/flan-t5-small")
+
+question=input("enter your question : ")
+question_embeddings=embedding_model.encode([question])
+distance,indices=index.search(question_embeddings,k=3)
+retrived_content=[
+    documents[i] for i in indices[0]
+]
+context="\n".join(retrived_content)
+
+print("summary levels : ")
+print("1.Breif")
+print("2.Moderate")
+print("3.Detailed")
+level=input("enter your summary level : ")
+if level=="1":
+  instruction="Answer is 1 or 2 sentences"
+elif level=="2":
+  instruction="Give Short paragraph explanation with facts"
+else:
+  instruction="Give Detailed explantion  of facts,legal review,court decision"
+
+prompt=f"""
+you are legal document analysis assistant.
+use retrived legal content only.
+
+legal content :
+{context}
+
+question:
+{question}
+
+instruction:.
+
+{instruction}
+"""
+
+answer=generator(
+    prompt,
+    max_new_tokens=100
+)[0]["generated_text"]
+print(answer)
