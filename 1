@@ -1,0 +1,65 @@
+
+!pip install -q transformers datasets rouge-score
+
+import torch
+import pandas as pd
+from datasets import load_dataset
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+from rouge_score import rouge_scorer
+
+
+dataset = load_dataset("S3IC/cnn_dailymail", split="train[:5]")
+
+tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large-cnn")
+model = AutoModelForSeq2SeqLM.from_pretrained("facebook/bart-large-cnn")
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+model.to(device)
+model.eval()
+
+
+scorer = rouge_scorer.RougeScorer(
+    ["rouge1", "rouge2", "rougeL"]
+)
+
+results = []
+
+for i, data in enumerate(dataset, 1):
+    inputs = tokenizer(
+        data["article"], max_length=512,
+        truncation=True, return_tensors="pt"
+    ).to(device)
+
+    with torch.no_grad():
+        output = model.generate(
+            **inputs, max_length=100,
+            min_length=20
+        )
+
+    summary = tokenizer.decode(output[0], skip_special_tokens=True)
+    reference = data["highlights"]
+
+    scores = scorer.score(reference, summary)
+
+    print("\nARTICLE", i)
+    print("\nGENERATED SUMMARY:\n", summary)
+    print("\nREFERENCE SUMMARY:\n", reference)
+    print("\nROUGE-1:", round(scores["rouge1"].fmeasure, 4))
+    print("ROUGE-2:", round(scores["rouge2"].fmeasure, 4))
+    print("ROUGE-L:", round(scores["rougeL"].fmeasure, 4))
+
+    results.append({
+        "Article": i,
+        "Generated Summary": summary,
+        "Reference Summary": reference,
+        "ROUGE-1": scores["rouge1"].fmeasure,
+        "ROUGE-2": scores["rouge2"].fmeasure,
+        "ROUGE-L": scores["rougeL"].fmeasure
+    })
+
+
+df = pd.DataFrame(results)
+
+print("\nAVERAGE ROUGE SCORES")
+for col in ["ROUGE-1", "ROUGE-2", "ROUGE-L"]:
+    print(col, ":", round(df[col].mean(), 4))
