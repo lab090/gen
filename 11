@@ -1,0 +1,46 @@
+
+!pip -q install transformers datasets sentence-transformers
+
+import torch
+import pandas as pd
+from transformers import pipeline, set_seed
+from datasets import load_dataset
+from sentence_transformers import SentenceTransformer, util
+
+set_seed(42)
+
+
+data = load_dataset("truthfulqa/truthful_qa", "generation", split="validation")
+data = data.shuffle(seed=42).select(range(5))
+
+
+generator = pipeline("text-generation", model="gpt2",
+                     device=0 if torch.cuda.is_available() else -1)
+
+
+answers = []
+for q in data["question"]:
+    prompt = "Question: " + q + "\nAnswer:"
+    result = generator(prompt, max_new_tokens=40)
+    answers.append(result[0]["generated_text"].split("Answer:")[-1].strip())
+
+
+model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+
+ref = model.encode(data["best_answer"], convert_to_tensor=True)
+gen = model.encode(answers, convert_to_tensor=True)
+
+scores = util.cos_sim(gen, ref).diagonal().cpu().tolist()
+
+
+df = pd.DataFrame({
+    "Question": data["question"],
+    "Correct Answer": data["best_answer"],
+    "Generated Answer": answers,
+    "Similarity Score": [round(s, 3) for s in scores]
+})
+
+display(df)
+
+print("Average Similarity Score:", round(sum(scores)/len(scores), 3))
+print("Experiment completed successfully!")
