@@ -1,0 +1,60 @@
+!pip -q install transformers datasets
+
+from datasets import load_dataset
+from transformers import pipeline
+
+
+data = load_dataset("mediabiasgroup/news-unfold-dataset")
+
+print(data["train"][0])
+
+
+classifier = pipeline(
+    "text-classification",
+    model="himel7/bias-detector"
+)
+
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score
+)
+
+
+test_data = data["train"].select(range(20))
+
+texts = list(test_data["text"])
+actual_labels = list(test_data["label"])
+
+
+results = classifier(texts, batch_size=16)
+
+predicted_labels = [
+    1 if r["label"] == "LABEL_1" else 0
+    for r in results
+]
+
+
+for i, (text, actual, predicted, result) in enumerate(
+    zip(texts, actual_labels, predicted_labels, results), start=1
+):
+    actual_name = "Biased" if actual == 1 else "Unbiased"
+    predicted_name = "Biased" if predicted == 1 else "Unbiased"
+    status = "Correct" if actual == predicted else "Incorrect"
+
+    print(f"\nSentence {i}: {text}")
+    print(f"Actual Label: {actual_name}")
+    print(f"Predicted Label: {predicted_name}")
+    print(f"Confidence: {result['score'] * 100:.2f}%")
+    print(f"Result: {status}")
+
+
+
+print(f"Accuracy:  {accuracy_score(actual_labels, predicted_labels) * 100:.2f}%")
+
+print(f"Precision: {precision_score(actual_labels, predicted_labels, zero_division=0) * 100:.2f}%")
+
+print(f"Recall:    {recall_score(actual_labels, predicted_labels, zero_division=0) * 100:.2f}%")
+
+print(f"F1-score:  {f1_score(actual_labels, predicted_labels, zero_division=0) * 100:.2f}%")
