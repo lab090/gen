@@ -1,0 +1,71 @@
+!pip -q install sentence-transformers faiss-cpu transformers sentencepiece accelerate
+
+import numpy as np
+import faiss
+import torch
+from sentence_transformers import SentenceTransformer
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+
+
+documents = [
+    "Bangalore to Goa flights take around 1 hour 20 minutes. Tickets start from Rs. 3500.",
+    "Goa budget hotels cost Rs. 1500 to Rs. 3000 per night. Luxury hotels cost Rs. 6000 or more.",
+    "Popular attractions include Baga Beach, Calangute Beach, Fort Aguada, Dudhsagar Falls and Anjuna Beach.",
+    "Baga Beach is famous for water sports and nightlife. Calangute Beach is popular for families and shopping.",
+    "Fort Aguada is a historic Portuguese fort with beautiful sea views.",
+    "Dudhsagar Falls is a famous waterfall with jeep tours and trekking routes.",
+    "Three-day itinerary: Day 1 Baga Beach, Day 2 Fort Aguada and Calangute Beach, Day 3 Dudhsagar Falls.",
+    "November to February is the best time to visit Goa.",
+    "Goa transport includes taxis, scooters and buses. Scooters cost Rs. 300 to Rs. 500 per day."
+]
+
+
+embedding_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+embeddings = embedding_model.encode(documents)
+
+
+index = faiss.IndexFlatL2(embeddings.shape[1])
+index.add(embeddings.astype("float32"))
+
+model_name = "google/flan-t5-small"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+model = model.to(device)
+
+
+history = []
+
+
+def retrieve(query):
+    q = embedding_model.encode([query])
+    D, I = index.search(q.astype("float32"), 3)
+    return [documents[i] for i in I[0]]
+
+
+def travel_assistant(query):
+    docs = retrieve(query)
+    context = "\n".join(docs)
+
+    prompt = f"Answer using this information: {context}\nQuestion: {query}"
+
+    inputs = tokenizer(prompt, return_tensors="pt",
+                       truncation=True).to(device)
+
+    outputs = model.generate(**inputs, max_new_tokens=120)
+    answer = tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+    history.append({"role": "User", "content": query})
+    history.append({"role": "Assistant", "content": answer})
+
+    return answer
+
+
+while True:
+    query = input("You: ")
+
+    if query.lower() == "exit":
+        break
+
+    print("Assistant:", travel_assistant(query))
